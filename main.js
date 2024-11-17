@@ -1,10 +1,8 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.124/build/three.module.js';
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.124/build/three.module.js";
 
-import {player} from './player.js';
-import {world} from './world.js';
-import {background} from './background.js';
-
-
+import { player } from "./player.js";
+import { world } from "./world.js";
+import { background } from "./background.js";
 
 const _VS = `
 varying vec3 vWorldPosition;
@@ -14,8 +12,7 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
 }`;
 
-
-  const _FS = `
+const _FS = `
 uniform vec3 topColor;
 uniform vec3 bottomColor;
 uniform float offset;
@@ -25,7 +22,6 @@ void main() {
   float h = normalize( vWorldPosition + offset ).y;
   gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 );
 }`;
-
 
 const _PCSS = `
 #define LIGHT_WORLD_SIZE 0.05
@@ -118,161 +114,193 @@ const _PCSSGetShadow = `
 return PCSS( shadowMap, shadowCoord );
 `;
 
-
 class BasicWorldDemo {
-  constructor() {
-    this._Initialize();
+	constructor() {
+		this._Initialize();
 
-    this._gameStarted = false;
-    document.getElementById('game-menu').onclick = (msg) => this._OnStart(msg);
-  }
+		this._gameStarted = false;
+		this._gameOver = false;
+		this._currentCharacter = "Velociraptor";
 
-  _OnStart(msg) {
-    document.getElementById('game-menu').style.display = 'none';
-    this._gameStarted = true;
-  }
+		// Event handlers for buttons
+		document.getElementById("play-button").onclick = () => this._OnStart();
+		document.getElementById("replay-button").onclick = () => this._OnReplay();
+		document
+			.getElementById("character-select")
+			.addEventListener("change", (e) => this._OnCharacterSelect(e));
+	}
 
-  _Initialize() {
-    // overwrite shadowmap code
-    let shadowCode = THREE.ShaderChunk.shadowmap_pars_fragment;
+	_OnStart() {
+		// Update character from the dropdown selection
+		this._currentCharacter = document.getElementById("character-select").value;
 
-    shadowCode = shadowCode.replace(
-        '#ifdef USE_SHADOWMAP',
-        '#ifdef USE_SHADOWMAP' +
-        _PCSS
-    );
+		// Reinitialize player with selected character
+		this._ResetPlayer();
 
-    shadowCode = shadowCode.replace(
-        '#if defined( SHADOWMAP_TYPE_PCF )',
-        _PCSSGetShadow +
-        '#if defined( SHADOWMAP_TYPE_PCF )'
-    );
+		// Hide the game menu and start the game
+		document.getElementById("game-menu").style.display = "none";
+		this._gameStarted = true;
+	}
 
-    THREE.ShaderChunk.shadowmap_pars_fragment = shadowCode;
-    // renderer
+	_OnCharacterSelect(event) {
+		this._currentCharacter = event.target.value;
+		console.log("Selected character:", this._currentCharacter);
+	}
 
-    this.threejs_ = new THREE.WebGLRenderer({
-      antialias: true,
-    });
-    this.threejs_.outputEncoding = THREE.sRGBEncoding;
-    this.threejs_.gammaFactor = 2.2;
-    // this.threejs_.toneMapping = THREE.ReinhardToneMapping;
-    this.threejs_.shadowMap.enabled = true;
-    // this.threejs_.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.threejs_.setPixelRatio(window.devicePixelRatio);
-    this.threejs_.setSize(window.innerWidth, window.innerHeight);
+	_OnReplay() {
+		// Update character from the dropdown selection
+		this._currentCharacter = document.getElementById("character-select").value;
 
-    document.getElementById('container').appendChild(this.threejs_.domElement);
+		// Hide the game-over panel and reset the game
+		document.getElementById("game-over").classList.remove("active");
+		this._ResetGame();
+		this._gameStarted = true;
+	}
 
-    window.addEventListener('resize', () => {
-      this.OnWindowResize_();
-    }, false);
+	_ResetPlayer() {
+		// Remove the previous player and reinitialize with the selected character
+		if (this.player_) {
+			this.scene_.remove(this.player_.mesh_);
+		}
 
-    const fov = 60;
-    const aspect = 1920 / 1080;
-    const near = 1.0;
-    const far = 20000.0;
-    this.camera_ = new THREE.PerspectiveCamera(fov, aspect, near, far);
-    this.camera_.position.set(-5, 5, 10);
-    this.camera_.lookAt(8, 3, 0);
+		this.player_ = new player.Player({
+			scene: this.scene_,
+			world: this.world_,
+			character: this._currentCharacter, // Pass the selected character
+		});
+	}
+  
+	_ResetGame() {
+		// Reinitialize the world, player, and background
+		this.scene_.clear(); // Clear all objects from the scene
+		this._InitializeScene(); // Reinitialize the scene elements
+		this._gameOver = false;
+	}
 
-    this.scene_ = new THREE.Scene();
+	_Initialize() {
+		// Renderer setup
+		this.threejs_ = new THREE.WebGLRenderer({
+			antialias: true,
+		});
+		this.threejs_.outputEncoding = THREE.sRGBEncoding;
+		this.threejs_.shadowMap.enabled = true;
+		this.threejs_.setPixelRatio(window.devicePixelRatio);
+		this.threejs_.setSize(window.innerWidth, window.innerHeight);
 
-    let light = new THREE.DirectionalLight(0xFFFFFF, 1.0);
-    light.position.set(60, 100, 10);
-    light.target.position.set(40, 0, 0);
-    light.castShadow = true;
-    light.shadow.bias = -0.001;
-    light.shadow.mapSize.width = 4096;
-    light.shadow.mapSize.height = 4096;
-    light.shadow.camera.far = 200.0;
-    light.shadow.camera.near = 1.0;
-    light.shadow.camera.left = 50;
-    light.shadow.camera.right = -50;
-    light.shadow.camera.top = 50;
-    light.shadow.camera.bottom = -50;
-    this.scene_.add(light);
+		document.getElementById("container").appendChild(this.threejs_.domElement);
 
-    light = new THREE.HemisphereLight(0x202020, 0x004080, 0.6);
-    this.scene_.add(light);
+		window.addEventListener("resize", () => this.OnWindowResize_(), false);
 
-    this.scene_.background = new THREE.Color(0x808080);
-    this.scene_.fog = new THREE.FogExp2(0x89b2eb, 0.00125);
+		// Initialize the scene
+		this.scene_ = new THREE.Scene();
+		this.camera_ = new THREE.PerspectiveCamera(60, 1920 / 1080, 1.0, 20000.0);
+		this.camera_.position.set(-5, 5, 10);
+		this.camera_.lookAt(8, 3, 0);
 
-    const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(20000, 20000, 10, 10),
-        new THREE.MeshStandardMaterial({
-            color: 0xf6f47f,
-          }));
-    ground.castShadow = false;
-    ground.receiveShadow = true;
-    ground.rotation.x = -Math.PI / 2;
-    this.scene_.add(ground);
+		this._InitializeScene();
+		this.previousRAF_ = null;
+		this.RAF_();
+	}
 
-    const uniforms = {
-      topColor: { value: new THREE.Color(0x0077FF) },
-      bottomColor: { value: new THREE.Color(0x89b2eb) },
-      offset: { value: 33 },
-      exponent: { value: 0.6 }
-    };
-    const skyGeo = new THREE.SphereBufferGeometry(1000, 32, 15);
-    const skyMat = new THREE.ShaderMaterial({
-        uniforms: uniforms,
-        vertexShader: _VS,
-        fragmentShader: _FS,
-        side: THREE.BackSide,
-    });
-    this.scene_.add(new THREE.Mesh(skyGeo, skyMat));
+	_InitializeScene() {
+		// Reset background, lighting, and other game objects
 
-    this.world_ = new world.WorldManager({scene: this.scene_});
-    this.player_ = new player.Player({scene: this.scene_, world: this.world_});
-    this.background_ = new background.Background({scene: this.scene_});
+		// Lighting
+		this.scene_.background = new THREE.Color(0x808080);
+		this.scene_.fog = new THREE.FogExp2(0x89b2eb, 0.00125);
 
-    this.gameOver_ = false;
-    this.previousRAF_ = null;
-    this.RAF_();
-    this.OnWindowResize_();
-  }
+		let light = new THREE.DirectionalLight(0xffffff, 1.0);
+		light.position.set(60, 100, 10);
+		light.target.position.set(40, 0, 0);
+		light.castShadow = true;
+		light.shadow.bias = -0.001;
+		light.shadow.mapSize.width = 4096;
+		light.shadow.mapSize.height = 4096;
+		light.shadow.camera.far = 200.0;
+		light.shadow.camera.near = 1.0;
+		light.shadow.camera.left = 50;
+		light.shadow.camera.right = -50;
+		light.shadow.camera.top = 50;
+		light.shadow.camera.bottom = -50;
+		this.scene_.add(light);
 
-  OnWindowResize_() {
-    this.camera_.aspect = window.innerWidth / window.innerHeight;
-    this.camera_.updateProjectionMatrix();
-    this.threejs_.setSize(window.innerWidth, window.innerHeight);
-  }
+		light = new THREE.HemisphereLight(0x202020, 0x004080, 0.6);
+		this.scene_.add(light);
 
-  RAF_() {
-    requestAnimationFrame((t) => {
-      if (this.previousRAF_ === null) {
-        this.previousRAF_ = t;
-      }
+		// Ground
+		const ground = new THREE.Mesh(
+			new THREE.PlaneGeometry(20000, 20000, 10, 10),
+			new THREE.MeshStandardMaterial({ color: 0xf6f47f })
+		);
+		ground.castShadow = false;
+		ground.receiveShadow = true;
+		ground.rotation.x = -Math.PI / 2;
+		this.scene_.add(ground);
 
-      this.RAF_();
+		// Sky
+		const uniforms = {
+			topColor: { value: new THREE.Color(0x0077ff) },
+			bottomColor: { value: new THREE.Color(0x89b2eb) },
+			offset: { value: 33 },
+			exponent: { value: 0.6 },
+		};
+		const skyGeo = new THREE.SphereBufferGeometry(1000, 32, 15);
+		const skyMat = new THREE.ShaderMaterial({
+			uniforms: uniforms,
+			vertexShader: _VS,
+			fragmentShader: _FS,
+			side: THREE.BackSide,
+		});
+		this.scene_.add(new THREE.Mesh(skyGeo, skyMat));
 
-      this.Step_((t - this.previousRAF_) / 1000.0);
-      this.threejs_.render(this.scene_, this.camera_);
-      this.previousRAF_ = t;
-    });
-  }
+		// Reinitialize world, player, and background
+		this.world_ = new world.WorldManager({ scene: this.scene_ });
+		this.player_ = new player.Player({
+			scene: this.scene_,
+			world: this.world_,
+			character: this._currentCharacter,
+		});
+		this.background_ = new background.Background({ scene: this.scene_ });
+	}
 
-  Step_(timeElapsed) {
-    if (this.gameOver_ || !this._gameStarted) {
-      return;
-    }
+	OnWindowResize_() {
+		this.camera_.aspect = window.innerWidth / window.innerHeight;
+		this.camera_.updateProjectionMatrix();
+		this.threejs_.setSize(window.innerWidth, window.innerHeight);
+	}
 
-    this.player_.Update(timeElapsed);
-    this.world_.Update(timeElapsed);
-    this.background_.Update(timeElapsed);
+	RAF_() {
+		requestAnimationFrame((t) => {
+			if (this.previousRAF_ === null) {
+				this.previousRAF_ = t;
+			}
 
-    if (this.player_.gameOver && !this.gameOver_) {
-      this.gameOver_ = true;
-      document.getElementById('game-over').classList.toggle('active');
-    }
-  }
+			this.RAF_();
+
+			this.Step_((t - this.previousRAF_) / 1000.0);
+			this.threejs_.render(this.scene_, this.camera_);
+			this.previousRAF_ = t;
+		});
+	}
+
+	Step_(timeElapsed) {
+		if (!this._gameStarted || this._gameOver) {
+			return;
+		}
+
+		this.player_.Update(timeElapsed);
+		this.world_.Update(timeElapsed);
+		this.background_.Update(timeElapsed);
+
+		if (this.player_.gameOver && !this._gameOver) {
+			this._gameOver = true;
+			document.getElementById("game-over").classList.add("active");
+		}
+	}
 }
-
 
 let _APP = null;
 
-window.addEventListener('DOMContentLoaded', () => {
-  _APP = new BasicWorldDemo();
+window.addEventListener("DOMContentLoaded", () => {
+	_APP = new BasicWorldDemo();
 });
